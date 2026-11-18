@@ -73,8 +73,26 @@
     redirect: 'error'
   }).then(async response => {
     if (!response.ok) throw new Error('Telegram profile unavailable');
-    const {user} = await response.json();
+    const {user, isOwner} = await response.json();
     profileStatus.textContent = user.name ? 'Telegram: ' + user.name : 'Telegram подключён';
+    if (isOwner) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'theme-toggle';
+      button.textContent = 'Админка';
+      profileStatus.after(' · ', button);
+      button.onclick = async () => {
+        button.disabled = true;
+        try {
+          const {openCatalogAdmin} = await import('./catalog-admin.js');
+          await openCatalogAdmin(webApp.initData);
+        } catch {
+          profileStatus.textContent = 'Не удалось открыть админку. Попробуй ещё раз.';
+        } finally {
+          button.disabled = false;
+        }
+      };
+    }
   }).catch(() => {
     profileStatus.textContent = 'Вход не удался. Открой магазин заново в Telegram.';
   });

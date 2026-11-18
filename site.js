@@ -8,6 +8,7 @@ heroOrbits.innerHTML = '<div class="hero-orbit"><i class="orbit-object orbit-bot
 document.querySelector('.hero')?.prepend(heroOrbits);
 const catalog = document.body.classList.contains('catalog-page');
 const motion = matchMedia('(prefers-reduced-motion: reduce)');
+(async () => {
 const items = [
   {name:'Под-система Smoant', brand:'Smoant', category:0, group:'Smoant', description:'Демонстрационная карточка под-системы.'},
   {name:'Под-система Vaporesso', brand:'Vaporesso', category:0, group:'Vaporesso', description:'Пример карточки устройства.'},
@@ -23,6 +24,31 @@ const items = [
   {name:'Персик и груша', brand:'Mist Demo', category:1, group:'Фруктовые', description:'Вымышленная жидкость с фруктовым профилем.'},
   {name:'Яблоко и манго', brand:'Mist Demo', category:1, group:'Фруктовые', description:'Вымышленная жидкость с яблочным и тропическим профилем.'}
 ];
+const names = ['Под-системы', 'Жидкости', 'Картриджи', 'Аксессуары'];
+const categoryGrid = document.querySelector('.category-grid');
+try {
+  const {loadCatalog} = await import('./catalog-admin.js');
+  const {categories, products} = await loadCatalog();
+  const categoryIndices = new Map();
+  for (const {id, name} of categories) {
+    categoryIndices.set(id, names.indexOf(name));
+    if (names.includes(name)) continue;
+    categoryIndices.set(id, names.push(name) - 1);
+    const card = document.createElement('div');
+    card.className = 'category';
+    const heading = document.createElement('h3');
+    heading.textContent = name;
+    card.append(heading);
+    categoryGrid.append(card);
+  }
+  for (const product of products) {
+    const category = categoryIndices.get(product.category);
+    if (category === undefined) continue;
+    items.push({...product, category, group: product.brand, published: true});
+  }
+} catch {
+  // The demonstration catalog remains available while the API is offline.
+}
 const grid = document.querySelector('#products .products');
 const status = document.querySelector('#search-note');
 const query = document.querySelector('#query');
@@ -69,8 +95,17 @@ function itemCard(item) {
   card.type = 'button';
   card.innerHTML = '<div class="product-image" aria-hidden="true"><span>ФОТО ТОВАРА</span></div><h3></h3><p></p>';
   card.querySelector('h3').textContent = item.name;
-  card.querySelector('p').textContent = [item.brand, 'Демотовар'].filter(Boolean).join(' · ');
+  card.querySelector('p').textContent = [item.brand, item.published ? '' : 'Демотовар'].filter(Boolean).join(' · ');
   card.querySelector('.product-image').innerHTML = '<i class="item-shape"></i>';
+  if (item.photo) {
+    const image = document.createElement('img');
+    image.alt = '';
+    image.loading = 'lazy';
+    image.referrerPolicy = 'no-referrer';
+    image.style.cssText = 'width:100%;height:100%;object-fit:contain';
+    image.onload = () => card.querySelector('.product-image').replaceChildren(image);
+    image.src = item.photo;
+  }
   card.dataset.kind = item.category;
   card.dataset.itemId = String(items.indexOf(item));
   const description = document.createElement('p');
@@ -80,6 +115,7 @@ function itemCard(item) {
     const from = card.getBoundingClientRect();
     opener = card;
     dialog.querySelector('h2').textContent = item.name;
+    dialog.querySelector('.label').textContent = item.published ? item.brand || 'Товар' : 'Демотовар';
     dialog.querySelector('.item-description').textContent = item.description;
     dialog.showModal();
     if (motion.matches) return;
@@ -130,7 +166,7 @@ for (const [index, card] of [...document.querySelectorAll('.category')].entries(
   }
   const links = document.createElement('div');
   links.className = 'filter-links';
-  const groups = [...new Set(items.filter(item => item.category === index).map(item => item.group))];
+  const groups = [...new Set(items.filter(item => item.category === index && item.group).map(item => item.group))];
   for (const group of ['', ...groups]) {
     const link = document.createElement('a');
     const filter = new URLSearchParams({category:index});
@@ -151,7 +187,6 @@ if (catalog && filters.size) {
   const active = document.createElement('nav');
   active.className = 'active-filters';
   active.setAttribute('aria-label','Активные фильтры');
-  const names = ['Под-системы', 'Жидкости', 'Картриджи', 'Аксессуары'];
   for (const [key,label] of [
     ['q', filters.get('q')],
     ['category', names[filters.get('category')]],
@@ -372,3 +407,4 @@ for (const card of document.querySelectorAll('.demo-product, .catalog-filter')) 
     card.style.removeProperty('--tilt-y');
   });
 }
+})();
