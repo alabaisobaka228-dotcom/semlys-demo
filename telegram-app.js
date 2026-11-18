@@ -61,6 +61,23 @@
   }
 
   webApp.ready();
+  const profileStatus = document.createElement('span');
+  profileStatus.setAttribute('role', 'status');
+  profileStatus.textContent = 'Подключаем Telegram…';
+  document.querySelector('.notice')?.append(' · ', profileStatus);
+  fetch('https://semlys-api.semlissavazov.workers.dev/api/telegram/profile', {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain;charset=UTF-8'},
+    body: webApp.initData,
+    credentials: 'omit',
+    redirect: 'error'
+  }).then(async response => {
+    if (!response.ok) throw new Error('Telegram profile unavailable');
+    const {user} = await response.json();
+    profileStatus.textContent = user.name ? 'Telegram: ' + user.name : 'Telegram подключён';
+  }).catch(() => {
+    profileStatus.textContent = 'Вход не удался. Открой магазин заново в Telegram.';
+  });
   webApp.expand();
   applyTelegramTheme();
   webApp.onEvent('themeChanged', applyTelegramTheme);
