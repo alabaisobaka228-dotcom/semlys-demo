@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Настройки SEMLYS</title>
+<style>
+*{box-sizing:border-box}body{background:#101111;color:#eee;font:16px/1.5 system-ui;margin:0}main{width:min(600px,calc(100% - 32px));margin:40px auto}a{color:#bad1ca}form{display:grid;gap:16px;background:#1d201f;padding:20px;border-radius:14px}label{display:grid;gap:5px}input,textarea,button{font:inherit;padding:9px;border-radius:7px;border:1px solid #65736e}input,textarea{background:#121413;color:inherit}button{cursor:pointer}output{color:#bad1ca}
+</style>
+<main>
+  <a href="index.html#place">← К витрине</a>
+  <h1>Настройки SEMLYS</h1>
+  <p><a href="index.html?edit=1">Редактировать главную</a> · <a href="products.html?edit=1">Редактировать каталог</a></p>
+  <p>Локальное демо. Изменения видны в этом браузере, когда админка и витрина открыты с одного адреса сайта.</p>
+  <form id="demo-login">
+    <label>Пароль<input name="password" type="password" required></label>
+    <button>Войти</button>
+    <output aria-live="polite"></output>
+  </form>
+  <form id="store-editor" hidden>
+    <label>Адрес<input name="address" maxlength="180"></label>
+    <label>Часы работы<input name="hours" maxlength="120"></label>
+    <label>О магазине<textarea name="description" rows="4" maxlength="500"></textarea></label>
+    <label>Фото входа или интерьера<input id="store-photo" type="file" accept="image/png,image/jpeg,image/webp"></label>
+    <img id="photo-preview" alt="Предпросмотр фотографии магазина" hidden style="width:100%;max-height:280px;object-fit:contain">
+    <button type="button" id="remove-photo">Убрать фото</button>
+    <fieldset id="featured-editor">
+      <legend>Популярные позиции</legend>
+      <p>Выбери четыре разных товара. Порядок здесь совпадает с порядком на главной.</p>
+    </fieldset>
+    <button id="save-store">Сохранить изменения</button>
+    <fieldset id="store-history"><legend>История сохранений</legend></fieldset>
+    <output id="store-status" aria-live="polite"></output>
+  </form>
+</main>
+<style>[hidden]{display:none!important}</style>
+<script src="settings-history.js"></script>
+<script src="catalog-items.js"></script>
+<script src="store-settings.js"></script>
+</html>
