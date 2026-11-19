@@ -9,42 +9,63 @@ document.querySelector('.hero')?.prepend(heroOrbits);
 const catalog = document.body.classList.contains('catalog-page');
 const motion = matchMedia('(prefers-reduced-motion: reduce)');
 (async () => {
-const items = [
-  {name:'Под-система Smoant', brand:'Smoant', category:0, group:'Smoant', description:'Демонстрационная карточка под-системы.'},
-  {name:'Под-система Vaporesso', brand:'Vaporesso', category:0, group:'Vaporesso', description:'Пример карточки устройства.'},
-  {name:'Жидкость «Ягоды»', category:1, group:'Ягодные', description:'Пример карточки жидкости с ягодным профилем.'},
-  {name:'Жидкость «Мята»', category:1, group:'Мятные', description:'Пример карточки жидкости с мятным профилем.'},
-  {name:'Картридж для под-системы', category:2, group:'Сменные', description:'Пример карточки сменного картриджа.'},
-  {name:'Сменный картридж', category:2, group:'Сменные', description:'Пример второй карточки этого раздела.'},
-  {name:'Luma Pocket', brand:'Luma Demo', category:0, group:'Luma Demo', description:'Вымышленный подик с матовым корпусом.'},
-  {name:'Luma Arc', brand:'Luma Demo', category:0, group:'Luma Demo', description:'Вымышленная модель с округлым корпусом.'},
-  {name:'Orbit Slate', brand:'Orbit Demo', category:0, group:'Orbit Demo', description:'Вымышленный подик в графитовом цвете.'},
-  {name:'Черника и смородина', brand:'Mist Demo', category:1, group:'Ягодные', description:'Вымышленная жидкость с ягодным профилем.'},
-  {name:'Мята и лайм', brand:'Mist Demo', category:1, group:'Мятные', description:'Вымышленная жидкость с мятным и цитрусовым профилем.'},
-  {name:'Персик и груша', brand:'Mist Demo', category:1, group:'Фруктовые', description:'Вымышленная жидкость с фруктовым профилем.'},
-  {name:'Яблоко и манго', brand:'Mist Demo', category:1, group:'Фруктовые', description:'Вымышленная жидкость с яблочным и тропическим профилем.'}
-];
+const items = [];
 const names = ['Под-системы', 'Жидкости', 'Картриджи', 'Аксессуары'];
+const categoryIds = new Map();
 const categoryGrid = document.querySelector('.category-grid');
+const catalogGroups = new Map();
+let catalogLoaded = false;
+function showCategoryPhoto(container, photo) {
+  if (!container || typeof photo !== 'string' || !photo.startsWith('https://')) return;
+  const image = document.createElement('img');
+  image.src = photo;
+  image.alt = '';
+  image.loading = 'lazy';
+  image.className = 'catalog-category-photo';
+  image.addEventListener('error', () => image.remove(), {once: true});
+  container.prepend(image);
+}
 try {
-  const {loadCatalog} = await import('./catalog-admin.js');
+  const {loadCatalog} = await import('./catalog-admin.js?v=release1');
   const {categories, products} = await loadCatalog();
+  catalogLoaded = true;
   const categoryIndices = new Map();
-  for (const {id, name} of categories) {
+  for (const {id, name, parent_id, photo} of categories) {
+    if (parent_id != null) continue;
+    if (id >= 1 && id <= 4 && !names.includes(name)) {
+      names[id - 1] = name;
+      categoryGrid.children[id - 1]?.querySelector('h3')?.replaceChildren(name);
+    }
     categoryIndices.set(id, names.indexOf(name));
-    if (names.includes(name)) continue;
+    categoryIds.set(name, id);
+    if (names.includes(name)) {
+      showCategoryPhoto(categoryGrid.children[names.indexOf(name)], photo);
+      categoryGrid.children[names.indexOf(name)].dataset.catalogId = id;
+      continue;
+    }
     categoryIndices.set(id, names.push(name) - 1);
     const card = document.createElement('div');
     card.className = 'category';
+    card.dataset.catalogId = id;
     const heading = document.createElement('h3');
     heading.textContent = name;
     card.append(heading);
+    showCategoryPhoto(card, photo);
     categoryGrid.append(card);
   }
+  const subcategories = new Map(categories.filter(item => item.parent_id != null).map(item => [item.id, item]));
+  for (const {id, name, parent_id, photo} of subcategories.values()) {
+    const index = categoryIndices.get(parent_id);
+    if (index === undefined) continue;
+    if (!catalogGroups.has(index)) catalogGroups.set(index, []);
+    catalogGroups.get(index).push({id, name, photo});
+  }
   for (const product of products) {
-    const category = categoryIndices.get(product.category);
+    const subcategory = subcategories.get(product.category);
+    const category = categoryIndices.get(subcategory?.parent_id ?? product.category);
     if (category === undefined) continue;
-    items.push({...product, category, group: product.brand, published: true});
+    items.push({...product, category, sectionId: subcategory?.parent_id ?? product.category,
+      subcategoryId: subcategory?.id, group: subcategory?.name || product.brand, published: true});
   }
 } catch {
   // The demonstration catalog remains available while the API is offline.
@@ -53,6 +74,8 @@ const grid = document.querySelector('#products .products');
 const status = document.querySelector('#search-note');
 const query = document.querySelector('#query');
 const filters = new URLSearchParams(location.search);
+const selectedSection = filters.get('cat');
+const selectedSubcategory = filters.get('sub');
 const dialog = document.createElement('dialog');
 dialog.className = 'demo-dialog card-transition';
 dialog.setAttribute('aria-labelledby', 'item-title');
@@ -63,7 +86,7 @@ let closing = false;
 async function returnToList() {
   if (closing || !dialog.open) return;
   closing = true;
-  if (!motion.matches && opener) {
+  if (!motion.matches && !document.documentElement.classList.contains('semlys-editor-view') && !document.body.classList.contains('catalog-management') && opener) {
     const from = opener.getBoundingClientRect();
     const current = dialog.getBoundingClientRect();
     dialog.getAnimations().forEach(animation => animation.cancel());
@@ -99,11 +122,17 @@ function itemCard(item) {
   card.querySelector('.product-image').innerHTML = '<i class="item-shape"></i>';
   if (item.photo) {
     const image = document.createElement('img');
-    image.alt = '';
+    image.alt = item.photo_alt || '';
     image.loading = 'lazy';
     image.referrerPolicy = 'no-referrer';
     image.style.cssText = 'width:100%;height:100%;object-fit:contain';
-    image.onload = () => card.querySelector('.product-image').replaceChildren(image);
+    const container = card.querySelector('.product-image');
+    container.removeAttribute('aria-hidden');
+    image.onerror = () => {
+      container.setAttribute('aria-hidden', 'true');
+      container.innerHTML = '<i class="item-shape"></i>';
+    };
+    container.replaceChildren(image);
     image.src = item.photo;
   }
   card.dataset.kind = item.category;
@@ -111,6 +140,11 @@ function itemCard(item) {
   const description = document.createElement('p');
   description.textContent = item.description;
   card.append(description);
+  if (Number.isFinite(item.price)) {
+    const price = document.createElement('strong');
+    price.textContent = new Intl.NumberFormat('ru-RU', {style:'currency',currency:'RUB'}).format(item.price);
+    card.append(price);
+  }
   card.onclick = () => {
     const from = card.getBoundingClientRect();
     opener = card;
@@ -118,7 +152,7 @@ function itemCard(item) {
     dialog.querySelector('.label').textContent = item.published ? item.brand || 'Товар' : 'Демотовар';
     dialog.querySelector('.item-description').textContent = item.description;
     dialog.showModal();
-    if (motion.matches) return;
+    if (motion.matches || document.documentElement.classList.contains('semlys-editor-view') || document.body.classList.contains('catalog-management')) return;
     const to = dialog.getBoundingClientRect();
     const x = from.left + (from.width - to.width)/2 - to.left;
     const y = from.top + (from.height - to.height)/2 - to.top;
@@ -136,12 +170,22 @@ function updateResults() {
   const terms = normalize(query.value).split(/\s+/);
   const aliases = ['под подик подики подсистема подсистемы под системы', 'жижа жижи жидкость жидкости', 'картридж картриджи'];
   const found = items.filter(item =>
+    (!selectedSection || selectedSection === String(item.sectionId)) &&
+    (!selectedSubcategory || selectedSubcategory === String(item.subcategoryId)) &&
+    (!(catalogLoaded && filters.has('category')) || item.published) &&
     (!filters.has('category') || filters.get('category') === String(item.category)) &&
     (!filters.has('group') || filters.get('group') === item.group) &&
     terms.every(term => normalize([item.name,item.brand,item.group,aliases[item.category]].join(' ')).includes(term))
   );
   grid.replaceChildren(...(catalog ? found : items.slice(0,4)).map(itemCard));
-  if (catalog) status.textContent = found.length ? 'Найдено: ' + found.length : 'Ничего не найдено. Измените запрос или снимите фильтр ниже.';
+  if (!catalog && !items.length) {
+    const empty = document.createElement('p');
+    empty.textContent = 'Товары скоро появятся.';
+    grid.append(empty);
+  }
+  if (catalog) status.textContent = found.length ? 'Найдено: ' + found.length
+    : !terms[0] && (selectedSection || filters.has('category')) ? 'В этом разделе пока нет товаров.'
+    : 'Ничего не найдено. Измените запрос или снимите фильтр ниже.';
 }
 
 document.querySelector('#search').addEventListener('submit', event => {
@@ -154,11 +198,14 @@ document.querySelector('#search').addEventListener('submit', event => {
 });
 
 for (const [index, card] of [...document.querySelectorAll('.category')].entries()) {
+  if (catalogLoaded && !card.dataset.catalogId) { card.remove(); continue; }
   const panel = document.createElement('details');
   panel.className = 'catalog-filter';
   const summary = document.createElement('summary');
   if (catalog) {
     summary.textContent = card.querySelector('h3').textContent.replace('↗','').trim();
+    const photo = card.querySelector('.catalog-category-photo');
+    if (photo) summary.prepend(photo);
   } else {
     panel.classList.add('home-category');
     summary.className = 'category';
@@ -166,36 +213,56 @@ for (const [index, card] of [...document.querySelectorAll('.category')].entries(
   }
   const links = document.createElement('div');
   links.className = 'filter-links';
-  const groups = [...new Set(items.filter(item => item.category === index && item.group).map(item => item.group))];
+  const subcategories = catalogGroups.get(index) || [];
+  const groups = catalogLoaded ? subcategories.map(item => item.name)
+    : [...new Set(items.filter(item => item.category === index && item.group).map(item => item.group))];
   for (const group of ['', ...groups]) {
     const link = document.createElement('a');
-    const filter = new URLSearchParams({category:index});
+    const subcategory = subcategories.find(item => item.name === group);
+    const filter = new URLSearchParams(catalogLoaded ? {cat:card.dataset.catalogId} : {category:index});
+    if (filters.get('manage') === '1') filter.set('manage', '1');
     if (catalog && filters.has('q')) filter.set('q', filters.get('q'));
-    if (group) filter.set('group',group);
+    if (subcategory) filter.set('sub',subcategory.id);
+    else if (group) filter.set('group',group);
     link.href = 'products.html?' + filter + '#categories';
     link.textContent = group || 'Все в разделе';
-    if (catalog && filters.get('category') === String(index) && (filters.get('group') || '') === group) {
+    showCategoryPhoto(link, subcategories.find(item => item.name === group)?.photo);
+    if (catalog && ((selectedSection === card.dataset.catalogId && selectedSubcategory === (subcategory ? String(subcategory.id) : null)) ||
+        (filters.get('category') === String(index) && (filters.get('group') || '') === group))) {
       link.setAttribute('aria-current','true');
       panel.open = true;
     }
     links.append(link);
   }
   panel.append(summary,links);
+  const categoryId = categoryIds.get(names[index]);
+  if (catalog && filters.get('manage') === '1' && categoryId !== undefined) {
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'theme-toggle catalog-owner-action';
+    add.textContent = 'Добавить сюда';
+    add.setAttribute('aria-label', 'Добавить товар в категорию «' + names[index] + '»');
+    add.onclick = () => document.dispatchEvent(new CustomEvent('semlys:add-product', {detail: categoryId}));
+    links.append(add);
+  }
   card.replaceWith(panel);
 }
-if (catalog && filters.size) {
+if (catalog && ['q', 'category', 'group', 'cat', 'sub'].some(key => filters.has(key))) {
   const active = document.createElement('nav');
   active.className = 'active-filters';
   active.setAttribute('aria-label','Активные фильтры');
   for (const [key,label] of [
     ['q', filters.get('q')],
     ['category', names[filters.get('category')]],
-    ['group', filters.get('group')]
+    ['group', filters.get('group')],
+    ['cat', names.find(name => String(categoryIds.get(name)) === selectedSection)],
+    ['sub', [...catalogGroups.values()].flat().find(item => String(item.id) === selectedSubcategory)?.name]
   ]) {
     if (!label) continue;
     const next = new URLSearchParams(filters);
     next.delete(key);
     if (key === 'category') next.delete('group');
+    if (key === 'cat') next.delete('sub');
     const link = document.createElement('a');
     link.href = 'products.html?' + next + '#products';
     link.textContent = label + ' ×';
@@ -204,14 +271,14 @@ if (catalog && filters.size) {
   }
   const reset = document.createElement('a');
   reset.className = 'catalog-reset';
-  reset.href = 'products.html#products';
+  reset.href = filters.get('manage') === '1' ? 'products.html?manage=1#products' : 'products.html#products';
   reset.textContent = 'Сбросить фильтры';
   active.append(reset);
   grid.before(active);
 }
 updateResults();
 
-const cartKey = 'semlys-demo-cart';
+const cartKey = 'semlys-published-cart-v1';
 let cart = {};
 try { cart = JSON.parse(localStorage.getItem(cartKey)) || {}; } catch {}
 const cartDialog = document.createElement('dialog');
@@ -373,7 +440,7 @@ for (const [topic, tip] of Object.entries(supportTopics)) {
       option.setAttribute('aria-pressed', String(option === button));
     }
     supportTip.textContent = tip;
-    if (!motion.matches) supportTip.animate([{opacity:0}, {opacity:1}], {duration:200});
+    if (!motion.matches && !document.documentElement.classList.contains('semlys-editor-view')) supportTip.animate([{opacity:0}, {opacity:1}], {duration:200});
     managerLink.hidden = false;
   };
 }
@@ -408,3 +475,11 @@ for (const card of document.querySelectorAll('.demo-product, .catalog-filter')) 
   });
 }
 })();
+
+
+
+
+
+
+
+

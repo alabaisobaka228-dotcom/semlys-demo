@@ -9,4 +9,83 @@ html[data-theme="dark"]{--surface:#181a19;--edge:#373c39;--accent:#a8c4b9}
 .demo-product h3{font-size:15px;font-weight:800}
 .demo-product:focus-visible,.nav a:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
 .products{row-gap:26px}
+@media(max-width:760px){
+  body:not(.catalog-page) #products .products{align-items:start}
+}
 @media(max-width:760px){.header .nav{display:flex;order:3;width:100%;justify-content:space-between;gap:8px}.header{height:auto;min-height:60px;flex-wrap:wrap;row-gap:4px;padding-block:8px}}
+
+.demo-dialog:has(.admin-tabs){background:#fff!important;color:#172033!important;max-width:720px;max-height:90vh;overflow:auto;animation:none!important}
+.demo-dialog:has(.admin-tabs) [hidden]{display:none!important}
+.demo-dialog .admin-tabs button{border:1px solid #cbd5e1;border-radius:7px;background:#f1f5f9;color:#172033}
+.demo-dialog .admin-tabs button[aria-pressed="true"]{background:#172033;color:#fff}
+.demo-dialog:has(.admin-tabs) :is(input,select,textarea){background:#fff;color:#172033;border:1px solid #94a3b8;border-radius:6px}
+.catalog-category-photo{display:block;width:48px;height:48px;object-fit:cover;border-radius:6px;margin-bottom:6px}
+@media(min-width:761px){
+  .catalog-page .catalog-filter{position:relative}
+  .catalog-page .catalog-filter[open]{z-index:3}
+  .catalog-page .catalog-filter[open] .filter-links{
+    position:absolute;top:100%;left:0;right:0;background:var(--surface);
+    border:1px solid var(--edge);border-radius:10px;padding:14px;
+  }
+}
+.catalog-filter summary:focus-visible,.filter-links a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.demo-dialog [data-drop]{border:1px dashed #888;border-radius:6px;padding:12px}
+/* A quiet workspace for the store owner. */
+html.semlys-editor-view, html.semlys-editor-view body {
+  background: #fff !important;
+  color: #202020 !important;
+  color-scheme: light;
+  scroll-behavior: auto !important;
+}
+.semlys-editor-view *, .semlys-editor-view *::before, .semlys-editor-view *::after {
+  animation: none !important;
+  transition: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  backdrop-filter: none !important;
+}
+.semlys-editor-view :is(.rings,.drop,.hero-orbits,.hero-image,.hero-meta,.support,.label) {
+  display: none !important;
+}
+.semlys-editor-view :is(.hero,.hero-copy,.header,.notice,.section,.category,.catalog-filter,.filter-links,.product-image,.info,.location,.demo-dialog) {
+  background: #fff !important;
+  color: #202020 !important;
+  border-color: #ddd !important;
+  transform: none !important;
+}
+.semlys-editor-view :is(.hero,.category,.product-image)::before,
+.semlys-editor-view :is(.hero,.category,.product-image)::after {
+  display: none;
+}
+.semlys-editor-view :is(.hero,.hero-copy) { min-height: 0; }
+.semlys-editor-view .hero-copy { padding: 20px 0; }
+.semlys-editor-view .hero h1 { font: 700 30px system-ui,sans-serif; color: inherit; background: none; }
+.semlys-editor-view :is(button,input,select,textarea,.pill) {
+  background: #fff !important;
+  color: #202020 !important;
+  border: 1px solid #aaa !important;
+}
+.semlys-editor-view :is(a,p,small,.search-note) { color: inherit !important; }
+.semlys-editor-view :focus-visible { outline: 2px solid #222; outline-offset: 3px; }
+.semlys-editor-view .admin-tabs button[aria-pressed="true"] { background: #222 !important; color: #fff !important; }
+.semlys-editor-view .demo-dialog::backdrop { background: #0003; backdrop-filter: none; }
+.semlys-editor-view .demo-dialog[open] { max-height: 90dvh; overflow: auto; }
+html.semlys-editor-view :is(.hero h1,.wordmark) {
+  font: 700 24px/1.2 system-ui,sans-serif !important;
+  color: #202020 !important;
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+html.semlys-editor-view :is(.hero h1,.hero-copy,.wordmark)::before,
+html.semlys-editor-view :is(.hero h1,.hero-copy,.wordmark)::after { display: none !important; }
+html.semlys-editor-view :is(.visual-toolbar,.search-wrap,.info-copy,.category-details,.visual-editable,.visual-upload) {
+  background: #fff !important;
+  color: #202020 !important;
+  border-color: #ccc !important;
+}
+html.semlys-editor-view :is(.card-transition,.demo-product,.catalog-filter,.arrow,.visual-editable) {
+  transform: none !important;
+  rotate: none !important;
+  filter: none !important;
+}
+html.semlys-editor-view :is(.theme-toggle#theme-toggle,.age-tag) { display: none !important; }

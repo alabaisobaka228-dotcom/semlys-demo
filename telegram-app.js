@@ -76,15 +76,29 @@
     const {user, isOwner} = await response.json();
     profileStatus.textContent = user.name ? 'Telegram: ' + user.name : 'Telegram подключён';
     if (isOwner) {
+      const applyEditorView = enabled => {
+        document.documentElement.classList.toggle('semlys-editor-view', enabled);
+        try { sessionStorage.setItem('semlys-editor-view', String(enabled)); } catch {}
+        viewButton.textContent = enabled ? 'Обычный вид' : 'Простой вид';
+        viewButton.setAttribute('aria-pressed', String(enabled));
+      };
+      const viewButton = document.createElement('button');
+      viewButton.type = 'button';
+      viewButton.className = 'theme-toggle';
+      viewButton.onclick = () => applyEditorView(!document.documentElement.classList.contains('semlys-editor-view'));
+      let simpleView = false;
+      try { simpleView = sessionStorage.getItem('semlys-editor-view') === 'true'; } catch {}
+      applyEditorView(simpleView);
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'theme-toggle';
       button.textContent = 'Админка';
-      profileStatus.after(' · ', button);
+      profileStatus.after(' · ', button, ' ', viewButton);
       button.onclick = async () => {
+        applyEditorView(true);
         button.disabled = true;
         try {
-          const {openCatalogAdmin} = await import('./catalog-admin.js');
+          const {openCatalogAdmin} = await import('./catalog-admin.js?v=release1');
           await openCatalogAdmin(webApp.initData);
         } catch {
           profileStatus.textContent = 'Не удалось открыть админку. Попробуй ещё раз.';
@@ -121,3 +135,9 @@
   addEventListener('pageshow', updateBackButton);
   updateBackButton();
 })();
+
+
+
+
+
+

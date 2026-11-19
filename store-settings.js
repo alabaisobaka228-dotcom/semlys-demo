@@ -7,11 +7,21 @@
   };
   const fields = Object.keys(defaults);
   function read() {
-    try { return {...defaults, ...JSON.parse(localStorage.getItem(key))}; }
+    try { return {...defaults, ...JSON.parse(localStorage.getItem(key)), ...JSON.parse(localStorage.getItem('semlys-admin-texts') || '{}'), description: JSON.parse(localStorage.getItem('semlys-admin-texts') || '{}').storeDescription || JSON.parse(localStorage.getItem(key) || '{}').description || defaults.description}; }
     catch { return defaults; }
   }
   function refreshStore() {
     const values = read();
+    const hero = document.querySelector('.hero-copy');
+    if (hero) {
+      const title = hero.querySelector('h2');
+      const subtitle = typeof values.heroTitle === 'string' ? values.heroTitle.trim() : '';
+      if (title) {
+        title.textContent = subtitle === 'Свой ритм. Своя атмосфера.' ? '' : subtitle;
+        title.hidden = !title.textContent;
+      }
+      if (values.heroDescription) hero.querySelector('p').textContent = values.heroDescription;
+    }
     document.querySelectorAll('[data-store]').forEach(element => {
       element.textContent = values[element.dataset.store];
     });
