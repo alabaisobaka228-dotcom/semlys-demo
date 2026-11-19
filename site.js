@@ -79,7 +79,7 @@ const selectedSubcategory = filters.get('sub');
 const dialog = document.createElement('dialog');
 dialog.className = 'demo-dialog card-transition';
 dialog.setAttribute('aria-labelledby', 'item-title');
-dialog.innerHTML = '<div class="demo-dialog-inner"><div class="demo-dialog-head"><span class="label">Демотовар</span><button type="button" class="demo-close" aria-label="Закрыть">×</button></div><h2 id="item-title"></h2><p class="item-description"></p></div>';
+dialog.innerHTML = '<div class="demo-dialog-inner"><div class="demo-dialog-head"><span class="label">Товар</span><button type="button" class="demo-close" aria-label="Закрыть">×</button></div><h2 id="item-title"></h2><p class="item-description"></p></div>';
 document.body.append(dialog);
 const close = dialog.querySelector('button');
 let closing = false;
@@ -118,17 +118,19 @@ function itemCard(item) {
   card.type = 'button';
   card.innerHTML = '<div class="product-image" aria-hidden="true"><span>ФОТО ТОВАРА</span></div><h3></h3><p></p>';
   card.querySelector('h3').textContent = item.name;
-  card.querySelector('p').textContent = [item.brand, item.published ? '' : 'Демотовар'].filter(Boolean).join(' · ');
+  card.querySelector('p').textContent = item.brand || '';
   card.querySelector('.product-image').innerHTML = '<i class="item-shape"></i>';
   if (item.photo) {
     const image = document.createElement('img');
     image.alt = item.photo_alt || '';
     image.loading = 'lazy';
     image.referrerPolicy = 'no-referrer';
-    image.style.cssText = 'width:100%;height:100%;object-fit:contain';
+    image.className = 'product-photo';
     const container = card.querySelector('.product-image');
+    container.classList.add('has-product-photo');
     container.removeAttribute('aria-hidden');
     image.onerror = () => {
+      container.classList.remove('has-product-photo');
       container.setAttribute('aria-hidden', 'true');
       container.innerHTML = '<i class="item-shape"></i>';
     };
@@ -149,7 +151,7 @@ function itemCard(item) {
     const from = card.getBoundingClientRect();
     opener = card;
     dialog.querySelector('h2').textContent = item.name;
-    dialog.querySelector('.label').textContent = item.published ? item.brand || 'Товар' : 'Демотовар';
+    dialog.querySelector('.label').textContent = item.published ? item.brand || 'Товар' : 'Товар';
     dialog.querySelector('.item-description').textContent = item.description;
     dialog.showModal();
     if (motion.matches || document.documentElement.classList.contains('semlys-editor-view') || document.body.classList.contains('catalog-management')) return;
@@ -161,7 +163,25 @@ function itemCard(item) {
       {transform:'none',opacity:1}
     ], {duration:380,easing:'cubic-bezier(.23,1,.32,1)'});
   };
-  return card;
+  if (!catalog || !item.published) return card;
+  const slot = document.createElement('div');
+  slot.append(card);
+  const actions = document.createElement('div');
+  actions.className = 'catalog-owner-action owner-card-actions';
+  for (const [label, focus] of [['Редактировать товар','[data-type="product"] [name="name"]'],
+    ['Загрузить фото','[data-type="product"] [type="file"]'], ['Указать цену','[data-type="product"] [name="price"]'],
+    ['Удалить товар','[data-type="product"] [data-delete]']]) {
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = 'theme-toggle';
+    action.textContent = label;
+    action.onclick = () => document.dispatchEvent(new CustomEvent('semlys:edit-product', {
+      detail: {productId:item.id, mount:slot, focus}
+    }));
+    actions.append(action);
+  }
+  slot.append(actions);
+  return slot;
 }
 
 function updateResults() {
@@ -233,19 +253,38 @@ for (const [index, card] of [...document.querySelectorAll('.category')].entries(
       panel.open = true;
     }
     links.append(link);
+    if (catalog && subcategory) {
+      addProductHere(links, subcategory.id, subcategory.name);
+      addCategoryDelete(links, subcategory.id, 'Удалить подкатегорию');
+    }
   }
   panel.append(summary,links);
   const categoryId = categoryIds.get(names[index]);
-  if (catalog && filters.get('manage') === '1' && categoryId !== undefined) {
-    const add = document.createElement('button');
-    add.type = 'button';
-    add.className = 'theme-toggle catalog-owner-action';
-    add.textContent = 'Добавить сюда';
-    add.setAttribute('aria-label', 'Добавить товар в категорию «' + names[index] + '»');
-    add.onclick = () => document.dispatchEvent(new CustomEvent('semlys:add-product', {detail: categoryId}));
-    links.append(add);
+  if (catalog && categoryId !== undefined) {
+    addCategoryDelete(links, categoryId, 'Удалить категорию');
   }
   card.replaceWith(panel);
+}
+function addProductHere(container, categoryId, name) {
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'theme-toggle catalog-owner-action';
+  add.textContent = 'Добавить товар в «' + name + '»';
+  add.onclick = () => document.dispatchEvent(new CustomEvent('semlys:edit-product', {
+    detail: {categoryId, section:'product', focus:'[data-type="product"] [name="name"]'}
+  }));
+  container.append(add);
+}
+function addCategoryDelete(container, categoryToEdit, label) {
+  if (categoryToEdit === -1) return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'theme-toggle catalog-owner-action';
+  button.textContent = label;
+  button.onclick = () => document.dispatchEvent(new CustomEvent('semlys:delete-category', {
+    detail:{categoryId:categoryToEdit, button}
+  }));
+  container.append(button);
 }
 if (catalog && ['q', 'category', 'group', 'cat', 'sub'].some(key => filters.has(key))) {
   const active = document.createElement('nav');
@@ -278,14 +317,60 @@ if (catalog && ['q', 'category', 'group', 'cat', 'sub'].some(key => filters.has(
 }
 updateResults();
 
-const cartKey = 'semlys-published-cart-v1';
+const cartKey = 'semlys-product-id-cart';
+const cartProducts = new Map(items.map(item => [String(item.id), item]));
 let cart = {};
 try { cart = JSON.parse(localStorage.getItem(cartKey)) || {}; } catch {}
 const cartDialog = document.createElement('dialog');
 cartDialog.className = 'demo-dialog';
 cartDialog.setAttribute('aria-labelledby', 'cart-title');
-cartDialog.innerHTML = '<div class="demo-dialog-inner"><div class="demo-dialog-head"><h2 id="cart-title">Демо-корзина</h2><form method="dialog"><button class="demo-close" aria-label="Закрыть">×</button></form></div><p>Пробный список. Заказы не оформляются.</p><ul class="cart-list"></ul></div>';
+cartDialog.innerHTML = `<div class="demo-dialog-inner"><div class="demo-dialog-head"><h2 id="cart-title">Корзина</h2><form method="dialog"><button class="demo-close" aria-label="Закрыть">×</button></form></div>
+  <ul class="cart-list"></ul><form class="order-form" hidden>
+    <p data-order-total></p><p>Самовывоз · Оплата при получении</p>
+    <label>Телефон <input name="phone" type="tel" autocomplete="tel" required maxlength="24"></label>
+    <label>Комментарий (необязательно) <textarea name="comment" maxlength="300"></textarea></label>
+    <button class="theme-toggle" type="submit">Отправить заказ</button>
+  </form><p role="status" data-order-status></p></div>`;
 document.body.append(cartDialog);
+const orderForm = cartDialog.querySelector('.order-form');
+const orderStatus = cartDialog.querySelector('[data-order-status]');
+let orderPending = false;
+orderForm.onsubmit = async event => {
+  event.preventDefault();
+  if (orderPending) return;
+  const initData = window.Telegram?.WebApp?.initData;
+  if (!initData) { orderStatus.textContent = 'Открой магазин в Telegram, чтобы отправить заказ.'; return; }
+  const lines = Object.entries(cart).filter(([id]) => cartProducts.has(id))
+    .map(([id, quantity]) => ({id:Number(id),quantity}));
+  if (!lines.length) return;
+  if (lines.length > 20) { orderStatus.textContent = 'В одном заказе можно отправить до 20 разных товаров.'; return; }
+  const phone = orderForm.elements.phone.value.trim().replace(/[\s()-]/g,'');
+  if (!/^\+?\d{10,15}$/.test(phone)) { orderStatus.textContent = 'Проверь номер телефона.'; return; }
+  orderPending = true;
+  orderForm.querySelector('button').disabled = true;
+  orderStatus.textContent = 'Отправляем заказ…';
+  try {
+    const response = await fetch('https://semlys-api.semlissavazov.workers.dev/api/orders', {
+      method:'POST', redirect:'error', body:JSON.stringify({
+        initData, items:lines, phone, comment:orderForm.elements.comment.value.trim()
+      })
+    });
+    if (response.status === 401) { orderStatus.textContent = 'Сеанс истёк. Открой магазин заново в Telegram.'; return; }
+    if (response.status === 409) { orderStatus.textContent = 'Товар или цена изменились. Обнови каталог и проверь корзину.'; return; }
+    if (!response.ok) throw Error();
+    const {reference} = await response.json();
+    cart = {};
+    try { localStorage.removeItem(cartKey); } catch {}
+    orderForm.reset();
+    renderCart();
+    orderStatus.textContent = 'Заказ №' + reference + ' отправлен.';
+  } catch {
+    orderStatus.textContent = 'Не удалось подтвердить отправку. Перед повтором уточни у менеджера, получил ли он заказ.';
+  } finally {
+    orderPending = false;
+    orderForm.querySelector('button').disabled = false;
+  }
+};
 const cartButton = document.querySelector('#cart-button');
 cartButton.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4h3l2.5 12h11L21 7H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg><span class="cart-count" aria-hidden="true" hidden></span>';
 const cartCount = cartButton.querySelector('.cart-count');
@@ -296,17 +381,22 @@ cartStatus.setAttribute('role', 'status');
 const addToCart = document.createElement('button');
 addToCart.type = 'button';
 addToCart.className = 'theme-toggle';
-addToCart.textContent = 'В демо-корзину';
+addToCart.textContent = 'В корзину';
 dialog.querySelector('.demo-dialog-inner').append(addToCart, cartStatus);
 addToCart.onclick = () => {
-  const id = opener?.dataset.itemId;
-  if (id == null || !items[id]) return;
+  const item = items[opener?.dataset.itemId];
+  if (!item || !Number.isFinite(item.price)) {
+    cartStatus.textContent = 'Цена пока не указана. Уточни её у менеджера.';
+    return;
+  }
+  const id = String(item.id);
   changeCart(id, 1);
   cartStatus.textContent = 'В корзине: ' + cart[id];
 };
 dialog.addEventListener('close', () => { cartStatus.textContent = ''; });
 
 function changeCart(id, delta) {
+  if (orderPending) return;
   const quantity = Math.min(99, (Number(cart[id]) || 0) + delta);
   if (quantity > 0) cart[id] = quantity;
   else delete cart[id];
@@ -317,19 +407,24 @@ function renderCart() {
   const list = cartDialog.querySelector('ul');
   list.replaceChildren();
   let count = 0;
+  let total = 0;
+  let missingPrice = false;
   for (const [id, quantity] of Object.entries(cart)) {
-    if (!items[id] || !Number.isInteger(quantity) || quantity < 1) continue;
+    const item = cartProducts.get(id);
+    if (!item || !Number.isInteger(quantity) || quantity < 1) continue;
+    if (Number.isFinite(item.price)) total += Math.round(item.price * 100) * quantity;
+    else missingPrice = true;
     count += quantity;
     const row = document.createElement('li');
     const title = document.createElement('span');
-    title.textContent = items[id].name + ' · ' + quantity + ' шт.';
+    title.textContent = item.name + ' · ' + quantity + ' шт.';
     row.append(title);
     for (const [label, delta] of [['−', -1], ['+', 1], ['Удалить', -quantity]]) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'theme-toggle';
       button.textContent = label;
-      button.setAttribute('aria-label', (delta === 1 ? 'Увеличить количество: ' : label === '−' ? 'Уменьшить количество: ' : 'Удалить: ') + items[id].name);
+      button.setAttribute('aria-label', (delta === 1 ? 'Увеличить количество: ' : label === '−' ? 'Уменьшить количество: ' : 'Удалить: ') + item.name);
       button.onclick = () => {
         const position = [...list.children].indexOf(row);
         const control = [...row.querySelectorAll('button')].indexOf(button);
@@ -349,6 +444,9 @@ function renderCart() {
   cartButton.setAttribute('aria-label', count ? 'Корзина: ' + count + ' шт.' : 'Корзина пуста');
   cartCount.textContent = count > 99 ? '99+' : count;
   cartCount.hidden = !count;
+  orderForm.hidden = !count;
+  orderForm.querySelector('[data-order-total]').textContent = missingPrice ? 'У одного из товаров больше нет цены.' :
+    'Итого: ' + new Intl.NumberFormat('ru-RU', {style:'currency',currency:'RUB'}).format(total / 100);
 }
 renderCart();
 
@@ -361,7 +459,7 @@ privacy.innerHTML = `
       <h2 id="privacy-title">Политика конфиденциальности</h2>
       <form method="dialog"><button class="demo-close" aria-label="Закрыть">×</button></form>
     </div>
-    <p>Это уведомление описывает работу демонстрационной версии SEMLYS. На сайте нет регистрации, оформления заказов, оплаты или формы отправки обращений.</p>
+    <p>При отправке заказа состав корзины, имя и имя пользователя Telegram, телефон и комментарий передаются владельцу магазина через Telegram. Эти данные нужны для обработки заказа и связи с покупателем.</p>
     <p><strong>Поиск и настройки.</strong> Выбор темы хранится в браузере. Поисковый запрос может попасть в адрес страницы и историю браузера, а после публикации — в журналы хостинга. Не вводите в поиск телефон, адрес и другие личные данные.</p>
     <p><strong>Обращения.</strong> Ссылка «Написать менеджеру» открывает Telegram. Сайт не отправляет сообщение автоматически. Переписку обрабатывают Telegram и получатель сообщения. Для вопросов о данных, которые вы отправили менеджеру, можно обратиться к @semly1.</p>
     <p><strong>Внешние ресурсы.</strong> При загрузке веб-шрифтов браузер может обращаться к Google Fonts. Внешние сервисы могут получать IP-адрес и технические сведения о запросе.</p>
@@ -475,6 +573,9 @@ for (const card of document.querySelectorAll('.demo-product, .catalog-filter')) 
   });
 }
 })();
+
+
+
 
 
 

@@ -6,7 +6,7 @@ export async function loadCatalog() {
   return response.json();
 }
 
-export async function openCatalogAdmin(initData) {
+export async function openCatalogAdmin(initData, selection = {}) {
   const data = await loadCatalog();
   const dialog = document.createElement('dialog');
   dialog.className = 'demo-dialog';
@@ -14,7 +14,19 @@ export async function openCatalogAdmin(initData) {
   dialog.innerHTML = `<div class="demo-dialog-inner">
     <h2>Админка SEMLYS</h2>
     <form method="dialog"><button>Закрыть</button></form>
-    <nav class="admin-tabs" aria-label="Разделы админки"><button type="button" data-tab="catalog">Каталог</button><button type="button" data-tab="texts">Управление текстом</button></nav>
+    <nav class="admin-tabs" aria-label="Разделы админки"><button type="button" data-tab="catalog">Каталог</button><button type="button" data-tab="texts">Управление текстом</button><button type="button" data-tab="news">Рассылка</button></nav>
+    <form data-panel="news" hidden>
+      <p>Сообщение получат подписчики бота SEMLYS.</p>
+      <label>Текст сообщения <textarea name="message" required maxlength="1500" rows="5"></textarea></label>
+      <p><label>Фото (необязательно) <input type="file" accept="image/jpeg,image/png,image/webp"></label></p>
+      <img data-news-photo alt="Фото к рассылке" width="220" hidden>
+      <button type="button" data-clear-news-photo hidden>Убрать фото</button>
+      <p><label>Текст кнопки <input name="buttonText" maxlength="64"></label></p>
+      <p><label>Ссылка кнопки <input name="buttonUrl" type="url" maxlength="2048" placeholder="https://…"></label></p>
+      <p>Пустой текст — сообщение без кнопки. С фото можно написать до 950 символов.</p>
+      <button type="submit">Отправить подписчикам</button>
+      <p role="status" data-news-status></p>
+    </form>
     <div data-panel="catalog">
     <nav class="admin-tabs" aria-label="Управление каталогом">
       <button type="button" data-catalog-tab="product">Товары</button>
@@ -67,9 +79,10 @@ export async function openCatalogAdmin(initData) {
     </form>
     <p role="status" aria-live="polite"></p>
   </div>`;
-  document.body.append(dialog);
+  const mount = selection.mount || document.body;
+  mount.append(dialog);
   const productForm = dialog.querySelector('[data-type="product"]');
-  const status = dialog.querySelector('[role="status"]');
+  const status = dialog.querySelector('[role="status"]:not([data-news-status])');
   const textForm = dialog.querySelector('#admin-texts');
   const textDefaults = {heroTitle:'',heroDescription:'Место для информации о магазине, его ассортименте и ежедневном графике работы.',storeDescription:'SEMLYS — розничный магазин. Менеджер ответит на вопросы о товарах и поможет с обращением после покупки.',address:'Уточняется',hours:'Уточняются'};
   let currentTexts = textDefaults;
@@ -95,6 +108,7 @@ export async function openCatalogAdmin(initData) {
   dialog.querySelector('[data-catalog-tab="product"]').click();
   const categoryForm = dialog.querySelector('[data-type="category"]');
   const subcategoryForm = dialog.querySelector('[data-type="subcategory"]');
+  const sectionPhotos = new Map();
   const picker = productForm.querySelector('[type="file"]');
   const preview = productForm.querySelector('[data-photo-preview]');
   let photoData = '';
@@ -154,7 +168,59 @@ export async function openCatalogAdmin(initData) {
   };
   for (const form of [categoryForm, subcategoryForm]) {
     form.querySelector('[type="submit"]').insertAdjacentHTML('beforebegin',
-      '<p><label>Ссылка на фото (HTTPS) <input name="photo" type="url" maxlength="1024"></label></p>');
+      '<p><label>Фото из галереи <input type="file" accept="image/jpeg,image/png,image/webp"></label></p><input type="hidden" name="photo"><img data-section-photo alt="Фото раздела" width="160" hidden> <button type="button" data-remove-section-photo>Убрать фото</button><p data-section-photo-status role="status" hidden></p>');
+    const input = form.querySelector('[type="file"]');
+    const image = form.querySelector('[data-section-photo]');
+    const feedback = form.querySelector('[data-section-photo-status]');
+    const state = {data:'', version:0, pending:false, select(source) {
+      ++this.version;
+      this.pending = false;
+      this.data = '';
+      input.value = '';
+      form.elements.photo.value = source || '';
+      image.hidden = !source;
+      if (source) image.src = source;
+      else image.removeAttribute('src');
+      feedback.hidden = true;
+    }};
+    sectionPhotos.set(form, state);
+    form.querySelector('[data-remove-section-photo]').onclick = () => state.select('');
+    input.onchange = async () => {
+      const file = input.files[0];
+      input.value = '';
+      if (!file) return;
+      const version = ++state.version;
+      state.pending = true;
+      feedback.hidden = false;
+      feedback.textContent = 'Готовим фото…';
+      try {
+        if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) {
+          throw new Error('Выбери JPG, PNG или WebP до 10 МБ.');
+        }
+        const bitmap = await createImageBitmap(file);
+        const scale = Math.min(1, 1200 / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close();
+        let src;
+        for (const quality of [0.82,0.68,0.5,0.32]) {
+          src = canvas.toDataURL('image/webp',quality);
+          if (src.length < 750000) break;
+        }
+        if (!src.startsWith('data:image/webp;base64,') || src.length >= 750000) throw Error();
+        if (version !== state.version) return;
+        state.data = src.split(',')[1];
+        image.src = src;
+        image.hidden = false;
+        feedback.textContent = 'Фото готово. Сохрани раздел.';
+      } catch (error) {
+        if (version === state.version) feedback.textContent = error.message || 'Не удалось обработать фото.';
+      } finally {
+        if (version === state.version) state.pending = false;
+      }
+    };
   }
   function fillCatalog({categories, products}) {
     const names = new Map(categories.map(category => [category.id, category.name]));
@@ -167,13 +233,13 @@ export async function openCatalogAdmin(initData) {
       subcategoryForm.elements.id.replaceChildren(new Option('Новая подкатегория', ''), ...categories
         .filter(item => String(item.parent_id) === parent).map(({id, name}) => new Option(name, id)));
       subcategoryForm.elements.name.value = '';
-      subcategoryForm.elements.photo.value = '';
+      sectionPhotos.get(subcategoryForm).select('');
       subcategoryForm.querySelector('[data-delete]').disabled = true;
     };
     subcategoryForm.elements.parent_id.onchange = showSubcategories;
     subcategoryForm.elements.id.onchange = () => {
       subcategoryForm.elements.name.value = names.get(Number(subcategoryForm.elements.id.value)) || '';
-      subcategoryForm.elements.photo.value = categories.find(item => String(item.id) === subcategoryForm.elements.id.value)?.photo || '';
+      sectionPhotos.get(subcategoryForm).select(categories.find(item => String(item.id) === subcategoryForm.elements.id.value)?.photo);
       subcategoryForm.querySelector('[data-delete]').disabled = !subcategoryForm.elements.id.value;
     };
     showSubcategories();
@@ -199,8 +265,8 @@ export async function openCatalogAdmin(initData) {
     categoryForm.elements.id.onchange = () => {
       const category = categories.find(item => String(item.id) === categoryForm.elements.id.value);
       categoryForm.elements.name.value = category?.name || '';
-      categoryForm.elements.photo.value = category?.photo || '';
-      categoryForm.querySelector('[data-delete]').disabled = !category;
+      sectionPhotos.get(categoryForm).select(category?.photo);
+      categoryForm.querySelector('[data-delete]').disabled = !category || category.id === -1;
     };
     productForm.elements.id.onchange = () => {
       const product = products.find(item => String(item.id) === productForm.elements.id.value);
@@ -219,13 +285,136 @@ export async function openCatalogAdmin(initData) {
     };
   };
   fillCatalog(data);
+  if (selection.categoryToEdit != null) {
+    const section = data.categories.find(item => item.id === selection.categoryToEdit);
+    if (section) {
+      const form = section.parent_id == null ? categoryForm : subcategoryForm;
+      if (section.parent_id != null) {
+        form.elements.parent_id.value = String(section.parent_id);
+        form.elements.parent_id.onchange();
+      }
+      form.elements.id.value = String(section.id);
+      form.elements.id.onchange();
+      selection.section = section.parent_id == null ? 'category' : 'subcategory';
+    }
+  }
+  if (selection.productId != null) {
+    productForm.elements.id.value = String(selection.productId);
+    productForm.elements.id.onchange();
+  } else if (selection.categoryId != null) {
+    const section = data.categories.find(item => item.id === selection.categoryId);
+    if (section) {
+      productForm.elements.category.value = String(section.parent_id ?? section.id);
+      productForm.elements.category.onchange();
+      if (section.parent_id != null) productForm.elements.subcategory.value = String(section.id);
+    }
+  }
   let saved = false;
   let submitting = false;
+  const newsForm = dialog.querySelector('[data-panel="news"]');
+  const newsPicker = newsForm.querySelector('[type="file"]');
+  const newsPreview = newsForm.querySelector('[data-news-photo]');
+  const clearNewsPhoto = newsForm.querySelector('[data-clear-news-photo]');
+  const newsFeedback = newsForm.querySelector('[data-news-status]');
+  let newsImage = '', newsPhotoVersion = 0, processingNewsPhoto = false;
+  clearNewsPhoto.onclick = () => {
+    ++newsPhotoVersion;
+    processingNewsPhoto = false;
+    newsImage = '';
+    newsPicker.value = '';
+    newsPreview.removeAttribute('src');
+    newsPreview.hidden = clearNewsPhoto.hidden = true;
+    newsForm.elements.message.maxLength = 1500;
+  };
+  newsPicker.onchange = async () => {
+    const file = newsPicker.files[0];
+    clearNewsPhoto.onclick();
+    if (!file) return;
+    if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) {
+      newsFeedback.textContent = 'Выбери JPG, PNG или WebP до 10 МБ.';
+      return;
+    }
+    const version = newsPhotoVersion;
+    processingNewsPhoto = true;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 1200 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const context = canvas.getContext('2d');
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      let source;
+      for (const quality of [0.82, 0.68, 0.5, 0.32]) {
+        source = canvas.toDataURL('image/jpeg', quality);
+        if (source.length < 750000) break;
+      }
+      if (version !== newsPhotoVersion) return;
+      if (!source.startsWith('data:image/jpeg;base64,') || source.length >= 750000 ||
+          Math.max(canvas.width, canvas.height) > 20 * Math.min(canvas.width, canvas.height)) throw Error();
+      newsImage = source.split(',')[1];
+      newsPreview.src = source;
+      newsPreview.hidden = clearNewsPhoto.hidden = false;
+      newsForm.elements.message.maxLength = 950;
+      newsFeedback.textContent = 'Фото готово.';
+    } catch {
+      if (version === newsPhotoVersion) newsFeedback.textContent = 'Не удалось подготовить фото. Выбери другое изображение.';
+    } finally {
+      if (version === newsPhotoVersion) processingNewsPhoto = false;
+    }
+  };
+  newsForm.onsubmit = async event => {
+    event.preventDefault();
+    const message = newsForm.elements.message.value.trim();
+    if (submitting || !message) return;
+    if (processingNewsPhoto) { newsFeedback.textContent = 'Дождись обработки фото.'; return; }
+    if (newsImage && message.length > 950) { newsFeedback.textContent = 'Сократи подпись к фото до 950 символов.'; return; }
+    const buttonText = newsForm.elements.buttonText.value.trim();
+    const buttonUrl = newsForm.elements.buttonUrl.value.trim();
+    if (Boolean(buttonText) !== Boolean(buttonUrl) || (buttonUrl && !/^https?:\/\//i.test(buttonUrl))) {
+      newsFeedback.textContent = 'Для кнопки укажи текст и ссылку с https:// или http://.';
+      return;
+    }
+    if (!confirm('Отправить это сообщение всем подписчикам?')) return;
+    submitting = true;
+    const controls = [...dialog.querySelectorAll('button,textarea,input')].filter(control => !control.disabled);
+    controls.forEach(control => { control.disabled = true; });
+    const feedback = newsForm.querySelector('[data-news-status]');
+    let next = '', sent = 0, failed = 0;
+    feedback.textContent = 'Отправляем… Оставь админку открытой.';
+    try {
+      do {
+        const response = await fetch(new URL('/api/news/broadcast', catalogURL), {
+          method:'POST', redirect:'error', body:JSON.stringify({message, buttonText, buttonUrl,
+            photo:newsImage || undefined, after:next, initData})
+        });
+        if (!response.ok) throw Error();
+        const batch = await response.json();
+        sent += batch.sent;
+        failed += batch.failed;
+        next = batch.next;
+        feedback.textContent = 'Доставлено: ' + sent + '. Не доставлено: ' + failed + '.';
+        if (next) await new Promise(resolve => setTimeout(resolve, 1000));
+      } while (next);
+      if (!sent && !failed) feedback.textContent = 'Подписчиков пока нет.';
+      newsForm.reset();
+      clearNewsPhoto.onclick();
+    } catch {
+      feedback.textContent = 'Рассылка прервалась. Подтверждено доставок: ' + sent + '. Повторная рассылка может создать дубликаты.';
+    } finally {
+      submitting = false;
+      controls.forEach(control => { control.disabled = false; });
+    }
+  };
   for (const form of [categoryForm, subcategoryForm, productForm]) {
     const button = form.querySelector('[data-delete]');
     button.onclick = async () => {
+      form.append(status);
       const isProduct = form === productForm;
-      if (submitting || !confirm(isProduct ? 'Удалить выбранный товар?' : 'Удалить выбранный раздел?')) return;
+      if (submitting || (!isProduct && form.elements.id.value === '-1') || (isProduct && !confirm('Удалить выбранный товар?'))) return;
       submitting = true;
       button.disabled = true;
       try {
@@ -237,6 +426,7 @@ export async function openCatalogAdmin(initData) {
         }
         if (!response.ok) throw Error();
         saved = true;
+        dialog.dataset.catalogChanged = 'true';
         form.reset();
         if (isProduct) { ++photoVersion; processingPhoto = false; photoData = ''; showPhoto(); }
         fillCatalog(await loadCatalog());
@@ -260,7 +450,11 @@ export async function openCatalogAdmin(initData) {
     form.onsubmit = async event => {
       event.preventDefault();
       if (submitting) return;
+      form.append(status);
       const values = Object.fromEntries(new FormData(form));
+      const sectionPhoto = sectionPhotos.get(form);
+      if (sectionPhoto?.pending) { status.textContent = 'Дождись обработки фото.'; return; }
+      if (sectionPhoto?.data) values.photo_data = sectionPhoto.data;
       values.id = values.id ? Number(values.id) : null;
       if (form === subcategoryForm) values.parent_id = Number(values.parent_id);
       if (form === productForm) {
@@ -304,10 +498,13 @@ export async function openCatalogAdmin(initData) {
         }
         if (!response.ok) throw new Error('Save failed');
         saved = true;
+        dialog.dataset.catalogChanged = 'true';
         form.reset();
+        sectionPhoto?.select('');
         if (form === productForm) { photoData = ''; showPhoto(); }
         status.textContent = form === productForm ? 'Товар сохранён.'
-          : form === subcategoryForm ? 'Подкатегория сохранена.' : 'Категория сохранена.';
+          : (form === subcategoryForm ? 'Подкатегория' : 'Категория') + ' «' +
+            values.name.trim() + '» ' + (values.id ? 'сохранена.' : 'добавлена.');
         try { fillCatalog(await loadCatalog()); }
         catch { status.textContent += ' Открой админку заново, чтобы обновить списки.'; }
       } catch {
@@ -319,6 +516,15 @@ export async function openCatalogAdmin(initData) {
       }
     };
   }
-  dialog.showModal();
+  if (selection.tab) dialog.querySelector('[data-tab="' + selection.tab + '"]')?.click();
+  if (selection.section) dialog.querySelector('[data-catalog-tab="' + selection.section + '"]')?.click();
+  if (selection.mount) {
+    dialog.classList.add('owner-inline-editor');
+    dialog.show();
+    dialog.scrollIntoView({block:'nearest'});
+    if (selection.focus) dialog.querySelector(selection.focus)?.focus({preventScroll:true});
+  } else dialog.showModal();
 }
+
+
 

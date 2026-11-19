@@ -82,11 +82,13 @@
     const {user, isOwner} = await response.json();
     profileStatus.textContent = (user.name ? 'Telegram: ' + user.name : 'Telegram подключён') +
       (isOwner ? '' : ' · Гостевой доступ');
+    addNewsSubscription();
     if (isOwner === true) {
+      root.classList.add('semlys-owner');
       const applyEditorView = enabled => {
         document.documentElement.classList.toggle('semlys-editor-view', enabled);
         try { sessionStorage.setItem('semlys-editor-view', String(enabled)); } catch {}
-        viewButton.textContent = enabled ? 'Обычный вид' : 'Простой вид';
+        viewButton.textContent = enabled ? 'Выйти из редактирования' : 'Режим редактирования';
         viewButton.setAttribute('aria-pressed', String(enabled));
       };
       const viewButton = document.createElement('button');
@@ -99,28 +101,153 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'theme-toggle';
-      button.textContent = 'Админка';
+      button.textContent = 'Управление каталогом';
       const controls = document.createElement('div');
       controls.className = 'telegram-owner-controls';
       controls.append(button, viewButton);
       (header || notice)?.append(controls);
-      button.onclick = async () => {
+      async function openEditor(selection = {}) {
+        if (button.disabled) return;
+        const active = document.querySelector('dialog[open]');
+        if (active) {
+          if (!active.classList.contains('owner-inline-editor') ||
+              !active.dispatchEvent(new Event('cancel', {cancelable:true}))) return;
+          active.close();
+          if (active.dataset.catalogChanged === 'true') return;
+        }
         applyEditorView(true);
         button.disabled = true;
         try {
-          const {openCatalogAdmin} = await import('./catalog-admin.js?v=subcategory-fix1');
-          await openCatalogAdmin(webApp.initData);
+          const {openCatalogAdmin} = await import('./catalog-admin.js?v=section-gallery1');
+          await openCatalogAdmin(webApp.initData, {mount:editorArea, ...selection});
         } catch {
           button.textContent = 'Повторить вход';
           profileStatus.textContent = 'Не удалось загрузить админку. Попробуй ещё раз.';
         } finally {
           button.disabled = false;
         }
-      };
+      }
+      const editorArea = document.createElement('div');
+      document.querySelector('main')?.prepend(editorArea);
+      button.onclick = () => openEditor({});
+      for (const [tab, label] of [['texts','Управление текстом'],['news','Рассылка']]) {
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'theme-toggle';
+        action.textContent = label;
+        action.onclick = () => openEditor({tab});
+        controls.append(action);
+      }
+      document.addEventListener('semlys:edit-product', event => openEditor(event.detail));
+      document.addEventListener('semlys:delete-category', async event => {
+        const {categoryId, button: action} = event.detail;
+        if (action.disabled) return;
+        const feedback = action.nextElementSibling?.matches('[data-category-status]')
+          ? action.nextElementSibling : document.createElement('span');
+        feedback.dataset.categoryStatus = '';
+        feedback.setAttribute('role', 'status');
+        action.after(feedback);
+        action.disabled = true;
+        feedback.textContent = 'Удаляем…';
+        try {
+          const response = await fetch('https://semlys-api.semlissavazov.workers.dev/api/catalog', {
+            method:'POST', redirect:'error',
+            body:JSON.stringify({type:'delete_category',id:categoryId,initData:webApp.initData})
+          });
+          if (response.status === 401) {
+            feedback.textContent = 'Сеанс истёк. Открой магазин заново в Telegram.';
+            return;
+          }
+          if (!response.ok) throw Error();
+          const url = new URL(location.href);
+          if (url.searchParams.get('cat') === String(categoryId)) {
+            url.searchParams.delete('cat');
+            url.searchParams.delete('sub');
+          } else if (url.searchParams.get('sub') === String(categoryId)) url.searchParams.delete('sub');
+          try { sessionStorage.setItem('semlys-category-deleted','1'); } catch {}
+          history.replaceState(history.state,'',url);
+          location.reload();
+        } catch {
+          feedback.textContent = 'Не удалось удалить раздел. Попробуй ещё раз.';
+        } finally {
+          action.disabled = false;
+        }
+      });
+      try {
+        if (sessionStorage.getItem('semlys-category-deleted') === '1') {
+          sessionStorage.removeItem('semlys-category-deleted');
+          const status = document.createElement('p');
+          status.setAttribute('role','status');
+          status.textContent = 'Раздел удалён.';
+          document.querySelector('#categories .section-heading')?.after(status);
+        }
+      } catch {}
+      const heading = document.querySelector('.catalog-page #products .section-heading');
+      if (heading) {
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'theme-toggle catalog-owner-action';
+        add.textContent = 'Добавить товар';
+        add.onclick = () => {
+          const filters = new URLSearchParams(location.search);
+          const categoryId = Number(filters.get('sub') || filters.get('cat'));
+          openEditor({categoryId: categoryId || undefined});
+        };
+        heading.append(add);
+        const categories = document.querySelector('#categories .section-heading');
+        for (const [section, label] of [['category','Добавить категорию'],['subcategory','Добавить подкатегорию']]) {
+          const action = document.createElement('button');
+          action.type = 'button';
+          action.className = 'theme-toggle catalog-owner-action';
+          action.textContent = label;
+          action.onclick = () => openEditor({section});
+          categories?.append(action);
+        }
+      }
     }
   }).catch(() => {
     profileStatus.textContent = profileFailure;
   });
+  async function addNewsSubscription() {
+    const footer = document.querySelector('footer');
+    if (!footer) return;
+    const update = async enabled => {
+      const response = await fetch('https://semlys-api.semlissavazov.workers.dev/api/news/subscription', {
+        method:'POST', redirect:'error', body:JSON.stringify({initData:webApp.initData, enabled})
+      });
+      if (!response.ok) throw Error();
+      return (await response.json()).subscribed;
+    };
+    let subscribed;
+    try { subscribed = await update(); } catch { return; }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'theme-toggle';
+    const status = document.createElement('span');
+    status.setAttribute('role','status');
+    const refresh = () => { button.textContent = subscribed ? 'Отписаться от новостей' : 'Получать новости в Telegram'; };
+    refresh();
+    footer.append(button, status);
+    button.onclick = async () => {
+      button.disabled = true;
+      try {
+        if (!subscribed && typeof webApp.requestWriteAccess === 'function') {
+          const allowed = await new Promise(resolve => webApp.requestWriteAccess(resolve));
+          if (!allowed) { status.textContent = 'Подписка не включена.'; return; }
+        } else if (!subscribed) {
+          status.textContent = 'Обнови Telegram, чтобы подписаться.';
+          return;
+        }
+        subscribed = await update(!subscribed);
+        refresh();
+        status.textContent = subscribed ? 'Подписка включена.' : 'Подписка отключена.';
+      } catch {
+        status.textContent = 'Не удалось обновить подписку. Открой магазин заново.';
+      } finally {
+        button.disabled = false;
+      }
+    };
+  }
   webApp.expand();
   applyTelegramTheme();
   webApp.onEvent('themeChanged', applyTelegramTheme);
@@ -146,6 +273,12 @@
   addEventListener('pageshow', updateBackButton);
   updateBackButton();
 })();
+
+
+
+
+
+
 
 
 
