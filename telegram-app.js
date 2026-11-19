@@ -62,20 +62,27 @@
 
   webApp.ready();
   const profileStatus = document.createElement('span');
+  const notice = document.querySelector('.notice');
+  const header = document.querySelector('.header');
   profileStatus.setAttribute('role', 'status');
   profileStatus.textContent = 'Подключаем Telegram…';
-  document.querySelector('.notice')?.append(' · ', profileStatus);
+  notice?.append(' · ', profileStatus);
+  let profileFailure = 'Не удалось связаться с сервером. Открой магазин заново в Telegram.';
   fetch('https://semlys-api.semlissavazov.workers.dev/api/telegram/profile', {
     method: 'POST',
     headers: {'Content-Type': 'text/plain;charset=UTF-8'},
     body: webApp.initData,
     credentials: 'omit',
-    redirect: 'error'
+    redirect: 'error',
+    signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(10000) : undefined
   }).then(async response => {
+    if (response.status === 401) profileFailure = 'Сеанс Telegram не подтверждён. Закрой магазин и открой через кнопку бота.';
+    if (response.status >= 500) profileFailure = 'Сервер входа временно недоступен.';
     if (!response.ok) throw new Error('Telegram profile unavailable');
     const {user, isOwner} = await response.json();
-    profileStatus.textContent = user.name ? 'Telegram: ' + user.name : 'Telegram подключён';
-    if (isOwner) {
+    profileStatus.textContent = (user.name ? 'Telegram: ' + user.name : 'Telegram подключён') +
+      (isOwner ? '' : ' · Гостевой доступ');
+    if (isOwner === true) {
       const applyEditorView = enabled => {
         document.documentElement.classList.toggle('semlys-editor-view', enabled);
         try { sessionStorage.setItem('semlys-editor-view', String(enabled)); } catch {}
@@ -93,7 +100,10 @@
       button.type = 'button';
       button.className = 'theme-toggle';
       button.textContent = 'Админка';
-      profileStatus.after(' · ', button, ' ', viewButton);
+      const controls = document.createElement('div');
+      controls.className = 'telegram-owner-controls';
+      controls.append(button, viewButton);
+      (header || notice)?.append(controls);
       button.onclick = async () => {
         applyEditorView(true);
         button.disabled = true;
@@ -101,14 +111,15 @@
           const {openCatalogAdmin} = await import('./catalog-admin.js?v=subcategory-fix1');
           await openCatalogAdmin(webApp.initData);
         } catch {
-          profileStatus.textContent = 'Не удалось открыть админку. Попробуй ещё раз.';
+          button.textContent = 'Повторить вход';
+          profileStatus.textContent = 'Не удалось загрузить админку. Попробуй ещё раз.';
         } finally {
           button.disabled = false;
         }
       };
     }
   }).catch(() => {
-    profileStatus.textContent = 'Вход не удался. Открой магазин заново в Telegram.';
+    profileStatus.textContent = profileFailure;
   });
   webApp.expand();
   applyTelegramTheme();

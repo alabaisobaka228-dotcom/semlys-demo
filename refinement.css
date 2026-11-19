@@ -89,3 +89,5 @@ html.semlys-editor-view :is(.card-transition,.demo-product,.catalog-filter,.arro
   filter: none !important;
 }
 html.semlys-editor-view :is(.theme-toggle#theme-toggle,.age-tag) { display: none !important; }
+.telegram-owner-controls{display:flex;gap:6px;flex-wrap:wrap}
+@media(max-width:760px){.header:has(.telegram-owner-controls){height:auto;flex-wrap:wrap}.telegram-owner-controls{width:100%;padding-bottom:5px}}
