@@ -98,7 +98,7 @@
         applyEditorView(true);
         button.disabled = true;
         try {
-          const {openCatalogAdmin} = await import('./catalog-admin.js?v=release1');
+          const {openCatalogAdmin} = await import('./catalog-admin.js?v=subcategory-fix1');
           await openCatalogAdmin(webApp.initData);
         } catch {
           profileStatus.textContent = 'Не удалось открыть админку. Попробуй ещё раз.';
@@ -135,6 +135,7 @@
   addEventListener('pageshow', updateBackButton);
   updateBackButton();
 })();
+
 
 
 

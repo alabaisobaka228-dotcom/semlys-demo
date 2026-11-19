@@ -42,6 +42,7 @@ export async function openCatalogAdmin(initData) {
       <p><label>Название <input name="name" required maxlength="100"></label></p>
       <p><label>Категория <select name="category" required></select></label></p>
       <p><label>Подкатегория <select name="subcategory"></select></label></p>
+      <p data-new-subcategory hidden><label>Название новой подкатегории <input name="subcategory_name" maxlength="100" disabled></label></p>
       <p><label>Бренд <input name="brand" maxlength="80"></label></p>
       <p><label>Описание <textarea name="description" maxlength="500"></textarea></label></p>
       <p data-drop><label>Выбрать фото или перетащить сюда (JPG, PNG, WebP до 10 МБ)
@@ -180,7 +181,17 @@ export async function openCatalogAdmin(initData) {
     const fillProductSubcategories = () => {
       const parent = Number(productForm.elements.category.value);
       productForm.elements.subcategory.replaceChildren(new Option('Без подкатегории', ''), ...categories
-        .filter(item => item.parent_id === parent).map(({id,name}) => new Option(name,id)));
+        .filter(item => Number(item.parent_id) === parent).map(({id,name}) => new Option(name,id)),
+        new Option('Добавить подкатегорию…', 'new'));
+      productForm.elements.subcategory.onchange();
+    };
+    productForm.elements.subcategory.onchange = () => {
+      const adding = productForm.elements.subcategory.value === 'new';
+      const input = productForm.elements.subcategory_name;
+      input.closest('p').hidden = !adding;
+      input.disabled = !adding;
+      input.required = adding;
+      if (!adding) input.value = '';
     };
     productForm.elements.category.onchange = fillProductSubcategories;
     fillProductSubcategories();
@@ -254,7 +265,11 @@ export async function openCatalogAdmin(initData) {
       if (form === subcategoryForm) values.parent_id = Number(values.parent_id);
       if (form === productForm) {
         if (processingPhoto) { status.textContent = 'Подожди, пока обработается фото.'; return; }
-        values.category = Number(values.subcategory || values.category);
+        if (values.subcategory === 'new') {
+          values.subcategory_name = values.subcategory_name.trim();
+          if (!values.subcategory_name) { status.textContent = 'Введи название новой подкатегории.'; return; }
+        }
+        values.category = Number(values.subcategory === 'new' ? values.category : values.subcategory || values.category);
         delete values.subcategory;
         values.price = values.price === '' ? null : Number(values.price);
         if (photoData) values.photo_data = photoData.split(',')[1];
@@ -274,7 +289,9 @@ export async function openCatalogAdmin(initData) {
           return;
         }
         if (response.status === 409) {
-          status.textContent = 'Категория с таким названием уже есть.';
+          status.textContent = values.subcategory_name
+            ? 'Это название уже используется в другом разделе. Введи другое название подкатегории.'
+            : 'Категория с таким названием уже есть.';
           return;
         }
         if (response.status === 400 && (await response.json()).error === 'invalid_photo') {
